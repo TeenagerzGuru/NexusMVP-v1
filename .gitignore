@@ -1,0 +1,51 @@
+# Dependencies & build
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Environment & secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# AI / editor tooling (not part of the app)
+.cursor/
+.cursorrules
+.cursorignore
+**/.cursor/
+agent-transcripts/
+mcps/
+
+# Client confidential — keep local only
+NEXUS_MVP_Brief.pdf
+brief.txt
+GITHUB.md
+
+# Prisma local DB
+prisma/*.db
+prisma/*.db-journal
+
+# Test / cache / deploy
+coverage/
+.turbo/
+.vercel/
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc
+*.local

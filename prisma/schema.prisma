@@ -1,0 +1,583 @@
+// NEXUS MVP — Sprint 1 database schema
+// Section 4 data model: brands, users, customers, pricing, quotes, bookings,
+// fleet/carriers, jobs, PODs, invoices, audit log.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  OPERATIONS
+  DRIVER
+  CUSTOMER
+}
+
+enum QuoteStatus {
+  ACTIVE
+  EXPIRED
+  CONVERTED
+  ABANDONED
+}
+
+enum BookingStatus {
+  QUOTED
+  BOOKED
+  IN_TRANSIT
+  DELIVERED
+  INVOICED
+  CANCELLED
+}
+
+enum VehicleType {
+  T7_5
+  T18
+  T26
+  ARTIC
+}
+
+enum AddonType {
+  TAIL_LIFT
+  HIAB
+  ADR
+  TWO_PERSON
+}
+
+enum LaneMatchLevel {
+  DISTRICT
+  AREA
+}
+
+enum SurchargeValueType {
+  FLAT
+  PERCENTAGE
+}
+
+enum CarrierRateType {
+  PER_MILE
+  PER_JOB
+}
+
+enum FleetResourceStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  SENT
+  PAID
+  VOID
+}
+
+enum JobStatus {
+  PENDING_ASSIGNMENT
+  ASSIGNED
+  EN_ROUTE_COLLECTION
+  ARRIVED_COLLECTION
+  LOADED
+  EN_ROUTE_DELIVERY
+  ARRIVED_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum AuditEntityType {
+  BRAND
+  USER
+  CUSTOMER
+  PRICING_LANE
+  PRICING_VEHICLE_MULTIPLIER
+  PRICING_SURCHARGE
+  PRICING_BRAND_CONFIG
+  QUOTE
+  BOOKING
+  VEHICLE
+  CARRIER
+  JOB
+  POD
+  INVOICE
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+}
+
+// ---------------------------------------------------------------------------
+// 1. Brands
+// ---------------------------------------------------------------------------
+
+model Brand {
+  id        String   @id @default(cuid())
+  slug      String   @unique // deliverred | titan-cargo
+  name      String
+  domain    String   @unique // e.g. book.deliverred.co.uk
+
+  logoUrl   String?  @map("logo_url")
+  colours   Json     @default("{}") // { primary, secondary, accent, background }
+
+  contactEmail   String  @map("contact_email")
+  contactPhone   String? @map("contact_phone")
+  contactAddress String? @map("contact_address") @db.Text
+
+  vatNumber            String  @map("vat_number")
+  termsAndConditions   String  @map("terms_and_conditions") @db.Text
+
+  invoiceNumberPrefix  String @map("invoice_number_prefix") // DEL | TC
+  invoiceSequenceYear  Int    @map("invoice_sequence_year")
+  invoiceSequenceNext  Int    @default(1) @map("invoice_sequence_next")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users                  User[]
+  customers              Customer[]
+  pricingLanes           PricingLane[]
+  pricingVehicleMults    PricingVehicleMultiplier[]
+  pricingSurcharges      PricingSurcharge[]
+  pricingConfig          BrandPricingConfig?
+  quotes                 Quote[]
+  bookings               Booking[]
+  vehicles               Vehicle[]
+  carriers               Carrier[]
+  invoices               Invoice[]
+
+  @@map("brands")
+}
+
+// ---------------------------------------------------------------------------
+// 2. Users
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String?   @map("password_hash")
+  role         UserRole
+
+  // Null for admins who span both brands; scoped for ops, drivers, customers
+  brandId String? @map("brand_id")
+  brand   Brand?  @relation(fields: [brandId], references: [id], onDelete: SetNull)
+
+  firstName String? @map("first_name")
+  lastName  String? @map("last_name")
+  phone     String?
+
+  isActive    Boolean   @default(true) @map("is_active")
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  customerProfile Customer?
+  defaultVehicles Vehicle[] @relation("VehicleDefaultDriver")
+  assignedJobs    Job[]     @relation("JobDriver")
+  capturedPods    Pod[]     @relation("PodCapturedBy")
+  auditLogs       AuditLog[]
+
+  @@index([brandId])
+  @@index([role])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// 3. Customers
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  // Optional link when the customer has self-serve portal access
+  userId String? @unique @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  companyName String  @map("company_name")
+  billingName String? @map("billing_name")
+
+  billingAddressLine1 String? @map("billing_address_line1")
+  billingAddressLine2 String? @map("billing_address_line2")
+  billingCity         String? @map("billing_city")
+  billingCounty       String? @map("billing_county")
+  billingPostcode     String? @map("billing_postcode")
+  billingCountry      String  @default("GB") @map("billing_country")
+
+  paymentTerms String  @default("Net 0") @map("payment_terms")
+  creditLimit  Decimal @default(0) @map("credit_limit") @db.Decimal(12, 2)
+
+  contactEmail String? @map("contact_email")
+  contactPhone String? @map("contact_phone")
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bookings Booking[]
+
+  @@index([brandId])
+  @@index([companyName])
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// 4. Pricing rules (scoped per brand)
+// ---------------------------------------------------------------------------
+
+/// District-to-district or area-to-area lane base prices
+model PricingLane {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  matchLevel      LaneMatchLevel @map("match_level")
+  originCode      String         @map("origin_code") // e.g. M16 or M
+  destinationCode String         @map("destination_code")
+  vehicleType     VehicleType    @map("vehicle_type")
+  basePrice       Decimal        @map("base_price") @db.Decimal(10, 2)
+
+  label    String?
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([brandId, matchLevel, originCode, destinationCode, vehicleType])
+  @@index([brandId, isActive])
+  @@map("pricing_lanes")
+}
+
+/// Vehicle type multipliers applied after lane lookup
+model PricingVehicleMultiplier {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  vehicleType VehicleType @map("vehicle_type")
+  multiplier  Decimal     @db.Decimal(6, 4)
+
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([brandId, vehicleType])
+  @@map("pricing_vehicle_multipliers")
+}
+
+/// Add-on surcharges (tail-lift, HIAB, ADR, two-person)
+model PricingSurcharge {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  addonType AddonType          @map("addon_type")
+  valueType SurchargeValueType @map("value_type")
+  value     Decimal            @db.Decimal(10, 4)
+
+  label    String?
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([brandId, addonType])
+  @@map("pricing_surcharges")
+}
+
+/// Brand-level pricing config: margin layer, minimum floor, per-mile fallback rates
+model BrandPricingConfig {
+  id      String @id @default(cuid())
+  brandId String @unique @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  marginMultiplier Decimal @default(1) @map("margin_multiplier") @db.Decimal(6, 4)
+  minimumJobValue  Decimal @default(150) @map("minimum_job_value") @db.Decimal(10, 2)
+  roundToNearest   Decimal @default(5) @map("round_to_nearest") @db.Decimal(10, 2)
+  vatRate          Decimal @default(0.20) @map("vat_rate") @db.Decimal(5, 4)
+
+  urgentWithin24hMultiplier Decimal @default(1.25) @map("urgent_within_24h_multiplier") @db.Decimal(6, 4)
+  outOfHoursMultiplier    Decimal @default(1.20) @map("out_of_hours_multiplier") @db.Decimal(6, 4)
+  weekendMultiplier       Decimal @default(1.35) @map("weekend_multiplier") @db.Decimal(6, 4)
+
+  /// Per-mile fallback rates keyed by vehicle type, e.g. { "T18": 2.50 }
+  perMileRates Json @default("{}") @map("per_mile_rates")
+
+  quoteExpiryMinutes Int @default(60) @map("quote_expiry_minutes")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("brand_pricing_configs")
+}
+
+// ---------------------------------------------------------------------------
+// 5. Quotes
+// ---------------------------------------------------------------------------
+
+model Quote {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  reference String @unique // human-readable quote ref
+
+  status QuoteStatus @default(ACTIVE)
+
+  /// Full quote form inputs (postcodes, vehicle, date/time, addons, goods description)
+  inputs Json
+
+  /// Structured calculation breakdown (lane lookup steps, multipliers, surcharges, totals)
+  calculationBreakdown Json @map("calculation_breakdown")
+
+  priceExVat  Decimal @map("price_ex_vat") @db.Decimal(10, 2)
+  priceIncVat Decimal @map("price_inc_vat") @db.Decimal(10, 2)
+  vatAmount   Decimal @map("vat_amount") @db.Decimal(10, 2)
+
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  booking Booking?
+
+  @@index([brandId, status])
+  @@index([expiresAt])
+  @@map("quotes")
+}
+
+// ---------------------------------------------------------------------------
+// 6. Bookings
+// ---------------------------------------------------------------------------
+
+model Booking {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  /// Exactly one quote per booking (1:1)
+  quoteId String @unique @map("quote_id")
+  quote   Quote  @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  reference String @unique // booking ref shown to customer
+
+  status BookingStatus @default(BOOKED)
+
+  customerReference   String? @map("customer_reference")
+  specialInstructions String? @map("special_instructions") @db.Text
+
+  /// Contact captured at booking time (may differ from customer account)
+  contactName    String  @map("contact_name")
+  contactEmail   String  @map("contact_email")
+  contactPhone   String? @map("contact_phone")
+  contactCompany String? @map("contact_company")
+
+  valueExVat  Decimal @map("value_ex_vat") @db.Decimal(10, 2)
+  valueIncVat Decimal @map("value_inc_vat") @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  job     Job?
+  pod     Pod?
+  invoice Invoice?
+
+  @@index([brandId, status])
+  @@index([customerId])
+  @@map("bookings")
+}
+
+// ---------------------------------------------------------------------------
+// 7. Vehicles and carriers
+// ---------------------------------------------------------------------------
+
+model Vehicle {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  registration String
+  vehicleType  VehicleType @map("vehicle_type")
+
+  hasTailLift Boolean @default(false) @map("has_tail_lift")
+  hasHiab     Boolean @default(false) @map("has_hiab")
+  hasAdr      Boolean @default(false) @map("has_adr")
+  twoPerson   Boolean @default(false) @map("two_person")
+
+  defaultDriverId String? @map("default_driver_id")
+  defaultDriver   User?   @relation("VehicleDefaultDriver", fields: [defaultDriverId], references: [id], onDelete: SetNull)
+
+  status FleetResourceStatus @default(ACTIVE)
+
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  jobs Job[]
+
+  @@unique([brandId, registration])
+  @@index([brandId, status])
+  @@map("vehicles")
+}
+
+model Carrier {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  name         String
+  contactName  String? @map("contact_name")
+  contactEmail String? @map("contact_email")
+  contactPhone String? @map("contact_phone")
+
+  rateType  CarrierRateType? @map("rate_type")
+  rateValue Decimal?         @map("rate_value") @db.Decimal(10, 4)
+
+  status FleetResourceStatus @default(ACTIVE)
+
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  jobs Job[]
+
+  @@index([brandId, status])
+  @@map("carriers")
+}
+
+// ---------------------------------------------------------------------------
+// 8. Jobs
+// ---------------------------------------------------------------------------
+
+model Job {
+  id        String @id @default(cuid())
+  bookingId String @unique @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  status JobStatus @default(PENDING_ASSIGNMENT)
+
+  vehicleId String?  @map("vehicle_id")
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  carrierId String?  @map("carrier_id")
+  carrier   Carrier? @relation(fields: [carrierId], references: [id], onDelete: SetNull)
+
+  driverId String? @map("driver_id")
+  driver   User?   @relation("JobDriver", fields: [driverId], references: [id], onDelete: SetNull)
+
+  carrierCost Decimal? @map("carrier_cost") @db.Decimal(10, 2)
+
+  internalNotes String? @map("internal_notes") @db.Text
+
+  assignedAt            DateTime? @map("assigned_at")
+  enRouteCollectionAt   DateTime? @map("en_route_collection_at")
+  arrivedCollectionAt   DateTime? @map("arrived_collection_at")
+  loadedAt              DateTime? @map("loaded_at")
+  enRouteDeliveryAt     DateTime? @map("en_route_delivery_at")
+  arrivedDeliveryAt     DateTime? @map("arrived_delivery_at")
+  deliveredAt           DateTime? @map("delivered_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([carrierId])
+  @@map("jobs")
+}
+
+// ---------------------------------------------------------------------------
+// 9. PODs and invoices
+// ---------------------------------------------------------------------------
+
+model Pod {
+  id        String @id @default(cuid())
+  bookingId String @unique @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  photoUrl      String  @map("photo_url")
+  signatureData String  @map("signature_data") @db.Text // base64 SVG/PNG or JSON stroke data
+  recipientName String  @map("recipient_name")
+  notes         String? @db.Text
+
+  capturedById String @map("captured_by_id")
+  capturedBy   User   @relation("PodCapturedBy", fields: [capturedById], references: [id], onDelete: Restrict)
+
+  capturedAt DateTime @default(now()) @map("captured_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("pods")
+}
+
+model Invoice {
+  id      String @id @default(cuid())
+  brandId String @map("brand_id")
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  bookingId String  @unique @map("booking_id")
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  invoiceNumber String        @unique @map("invoice_number")
+  status        InvoiceStatus @default(DRAFT)
+
+  subtotal  Decimal @db.Decimal(10, 2)
+  vatAmount Decimal @map("vat_amount") @db.Decimal(10, 2)
+  total     Decimal @db.Decimal(10, 2)
+
+  pdfUrl    String?   @map("pdf_url")
+  issuedAt  DateTime? @map("issued_at")
+  sentAt    DateTime? @map("sent_at")
+  paidAt    DateTime? @map("paid_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([brandId, status])
+  @@map("invoices")
+}
+
+// ---------------------------------------------------------------------------
+// 10. Audit log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  actorId String? @map("actor_id")
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  entityType AuditEntityType @map("entity_type")
+  entityId   String          @map("entity_id")
+  action     AuditAction
+
+  /// Snapshot of changed fields before the action
+  before Json?
+  /// Snapshot of changed fields after the action
+  after  Json?
+
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
