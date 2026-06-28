@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const body = quoteSchema.parse(await request.json());
     const brandSlug = await getBrandSlugFromRequest();
 
-    const { quote, result } = await createQuoteRecord({
+    const { quote, result, distance } = await createQuoteRecord({
       ...body,
       brandSlug,
     });
@@ -34,6 +34,9 @@ export async function POST(request: Request) {
       priceIncVat: result.priceIncVat,
       vatAmount: result.vatAmount,
       breakdown: result.breakdown,
+      distanceMiles: distance.miles,
+      distanceSource: distance.source,
+      durationMinutes: distance.durationMinutes,
     });
   } catch (error) {
     console.error("[quotes]", error);

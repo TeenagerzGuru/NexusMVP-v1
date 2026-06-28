@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
 import { getSession, roleCanAccessDriver } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
@@ -27,6 +28,7 @@ export default async function DriverPage() {
   });
 
   return (
+    <PageContainer>
     <div>
       <PageHeader title="Driver" subtitle="Today's assigned jobs" />
       <DriverJobList
@@ -49,5 +51,6 @@ export default async function DriverPage() {
         })}
       />
     </div>
+    </PageContainer>
   );
 }

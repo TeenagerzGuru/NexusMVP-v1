@@ -1,7 +1,9 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
+import { RouteMapSkeleton } from "@/components/route-map-preview";
 import { Button } from "@/components/ui/button";
 import { Card, CardSkeleton } from "@/components/ui/card";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -10,11 +12,18 @@ import { SelectDropdown } from "@/components/ui/select-dropdown";
 import { TimePicker } from "@/components/ui/time-picker";
 import { fetchJson } from "@/lib/fetch-json";
 import { email, hasErrors, required, type FieldErrors } from "@/lib/form-validation";
+import { parseUkPostcode } from "@/lib/quote/postcode";
+import type { RoutePreview } from "@/lib/quote/route-preview";
 import type { QuoteAddon } from "@/lib/quote/types";
 import { VEHICLE_TYPES } from "@/lib/quote/types";
 import { formatMoney } from "@/lib/utils";
 
 const ADDONS: QuoteAddon[] = ["tail-lift", "hiab", "adr", "two-person"];
+
+const RouteMapPreview = dynamic(
+  () => import("@/components/route-map-preview").then((mod) => mod.RouteMapPreview),
+  { ssr: false, loading: () => <RouteMapSkeleton /> },
+);
 
 type QuoteField = "originPostcode" | "destinationPostcode" | "collectionDate" | "collectionTime" | "vehicleType";
 type BookingField = "contactName" | "contactEmail";
@@ -25,11 +34,14 @@ type QuoteResult = {
   priceExVat: number;
   priceIncVat: number;
   vatAmount: number;
+  distanceMiles?: number;
+  distanceSource?: "openrouteservice" | "estimate";
+  durationMinutes?: number | null;
   breakdown: Array<{ step: string; description: string; runningTotal: number }>;
 };
 
 /** Public quote + booking wizard — mounts client-only to dodge extension hydration noise. */
-export function QuoteForm() {
+export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState<QuoteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +54,10 @@ export function QuoteForm() {
   const [quoteErrors, setQuoteErrors] = useState<FieldErrors<QuoteField>>({});
   const [bookingErrors, setBookingErrors] = useState<FieldErrors<BookingField>>({});
   const [shakeKey, setShakeKey] = useState(0);
+  const [originPostcode, setOriginPostcode] = useState("");
+  const [destinationPostcode, setDestinationPostcode] = useState("");
+  const [routePreview, setRoutePreview] = useState<RoutePreview | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
 
   function clearQuoteError(field: QuoteField) {
     setQuoteErrors((prev) => {
@@ -98,6 +114,44 @@ export function QuoteForm() {
     setMinDate(today);
     setCollectionDate(today);
   }, []);
+
+  useEffect(() => {
+    const origin = originPostcode.trim();
+    const destination = destinationPostcode.trim();
+
+    if (origin.length < 5 || destination.length < 5) {
+      setRoutePreview(null);
+      setRouteLoading(false);
+      return;
+    }
+
+    try {
+      parseUkPostcode(origin);
+      parseUkPostcode(destination);
+    } catch {
+      setRoutePreview(null);
+      setRouteLoading(false);
+      return;
+    }
+
+    setRouteLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ origin, dest: destination });
+        const { data, ok } = await fetchJson<RoutePreview & { error?: string }>(
+          `/api/route-preview?${params}`,
+        );
+        if (ok) setRoutePreview(data);
+        else setRoutePreview(null);
+      } catch {
+        setRoutePreview(null);
+      } finally {
+        setRouteLoading(false);
+      }
+    }, 650);
+
+    return () => window.clearTimeout(timer);
+  }, [originPostcode, destinationPostcode]);
 
   /** Quote step — validates, POSTs quote, renders breakdown on success. */
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -200,13 +254,17 @@ export function QuoteForm() {
       )}
 
       {!quote && (
-        <Card className="animate-fade-in-up">
-          <h2 className="text-2xl font-bold" style={{ color: "var(--brand-primary)" }}>
-            Get an instant quote
-          </h2>
-          <p className="mt-1 text-sm text-gray-500">Postcode to postcode · under 2 seconds</p>
+        <Card className={`animate-fade-in-up ${embedded ? "landing-quote-card" : ""}`}>
+          {!embedded && (
+            <>
+              <h2 className="text-2xl font-bold" style={{ color: "var(--brand-primary)" }}>
+                Get an instant quote
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">Postcode to postcode · under 2 seconds</p>
+            </>
+          )}
 
-          <form onSubmit={onSubmit} noValidate className="mt-6 space-y-5">
+          <form onSubmit={onSubmit} noValidate className={embedded ? "space-y-5" : "mt-6 space-y-5"}>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Collection postcode" error={quoteErrors.originPostcode}>
                 <Input
@@ -214,8 +272,12 @@ export function QuoteForm() {
                   name="originPostcode"
                   data-field="originPostcode"
                   placeholder="M16 9PW"
+                  value={originPostcode}
                   invalid={!!quoteErrors.originPostcode}
-                  onChange={() => clearQuoteError("originPostcode")}
+                  onChange={(event) => {
+                    setOriginPostcode(event.target.value);
+                    clearQuoteError("originPostcode");
+                  }}
                 />
               </Field>
               <Field label="Delivery postcode" error={quoteErrors.destinationPostcode}>
@@ -224,10 +286,32 @@ export function QuoteForm() {
                   name="destinationPostcode"
                   data-field="destinationPostcode"
                   placeholder="B5 4AA"
+                  value={destinationPostcode}
                   invalid={!!quoteErrors.destinationPostcode}
-                  onChange={() => clearQuoteError("destinationPostcode")}
+                  onChange={(event) => {
+                    setDestinationPostcode(event.target.value);
+                    clearQuoteError("destinationPostcode");
+                  }}
                 />
               </Field>
+            </div>
+
+            {(routeLoading || routePreview) && (
+              <div className="relative">
+                {routeLoading && routePreview && (
+                  <div className="route-map-updating" aria-hidden>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  </div>
+                )}
+                {routeLoading && !routePreview ? (
+                  <RouteMapSkeleton />
+                ) : routePreview ? (
+                  <RouteMapPreview route={routePreview} />
+                ) : null}
+              </div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Collection date" error={quoteErrors.collectionDate}>
                 <DatePicker
                   key={quoteErrors.collectionDate ? `date-shake-${shakeKey}` : "date"}
@@ -279,7 +363,7 @@ export function QuoteForm() {
                 {ADDONS.map((addon) => (
                   <label
                     key={addon}
-                    className="flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm capitalize transition-all hover:border-gray-300 hover:shadow-sm"
+                    className="addon-chip flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm capitalize"
                   >
                     <input type="checkbox" name={addon} className="accent-[var(--brand-primary)]" />
                     {addon.replace("-", " ")}
@@ -308,8 +392,9 @@ export function QuoteForm() {
 
       {quote && (
         <div className="animate-fade-in-up space-y-4">
+          {routePreview && <RouteMapPreview route={routePreview} />}
           <Card
-            className="overflow-hidden"
+            className={`overflow-hidden ${embedded ? "landing-quote-card" : ""}`}
             style={{ borderTopWidth: 4, borderTopColor: "var(--brand-accent)" }}
           >
             <p className="text-sm text-gray-500">Quote {quote.reference}</p>
@@ -319,6 +404,13 @@ export function QuoteForm() {
             <p className="text-sm text-gray-600">
               {formatMoney(quote.priceExVat)} ex VAT + {formatMoney(quote.vatAmount)} VAT
             </p>
+            {quote.distanceMiles != null && (
+              <p className="mt-2 text-sm text-gray-500">
+                Route: {quote.distanceMiles} miles
+                {quote.durationMinutes != null ? ` · ~${quote.durationMinutes} min drive` : ""}
+                {quote.distanceSource === "openrouteservice" ? " (road, HGV)" : " (estimated)"}
+              </p>
+            )}
             <ul className="mt-5 space-y-2 border-t border-gray-100 pt-4 text-sm text-gray-600">
               {quote.breakdown.map((step, i) => (
                 <li
@@ -333,7 +425,7 @@ export function QuoteForm() {
             </ul>
           </Card>
 
-          <Card className="animate-fade-in-up stagger-2">
+          <Card className={`animate-fade-in-up stagger-2 ${embedded ? "landing-quote-card" : ""}`}>
             <h3 className="text-lg font-semibold">Confirm booking</h3>
             <form onSubmit={confirmBooking} noValidate className="mt-5 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">

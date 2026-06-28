@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { writeAuditLog } from "@/lib/audit/log";
-import { getSession, roleCanAccessOps } from "@/lib/auth/session";
+import { assertOpsBookingAccess, getSession, roleCanAccessOps } from "@/lib/auth/session";
 import { podDeliveryEmail, sendEmail } from "@/lib/email/send";
 import { generateInvoicePdf } from "@/lib/invoice/pdf";
 import { prisma } from "@/lib/prisma";
@@ -24,6 +24,12 @@ export async function PATCH(request: Request) {
     const body = statusSchema.parse(await request.json());
     const before = await prisma.booking.findUnique({ where: { id: body.bookingId } });
     if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    try {
+      assertOpsBookingAccess(session, before.brandId);
+    } catch {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const booking = await prisma.booking.update({
       where: { id: body.bookingId },
@@ -114,6 +120,12 @@ export async function POST(request: Request) {
       include: { job: true },
     });
     if (!booking?.job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+
+    try {
+      assertOpsBookingAccess(session, booking.brandId);
+    } catch {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const job = await prisma.job.update({
       where: { id: booking.job.id },

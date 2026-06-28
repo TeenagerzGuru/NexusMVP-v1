@@ -1,5 +1,7 @@
-import { QuoteForm } from "@/components/quote-form";
+import { LandingPage } from "@/components/landing-page";
+import { getBrand } from "@/lib/brand/resolve";
 
-export default function HomePage() {
-  return <QuoteForm />;
+export default async function HomePage() {
+  const brand = await getBrand();
+  return <LandingPage brand={brand} />;
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
@@ -22,6 +23,7 @@ export default async function AccountPage() {
   });
 
   return (
+    <PageContainer>
     <div>
       <PageHeader title="My bookings" subtitle={session.email} />
 
@@ -84,5 +86,6 @@ export default async function AccountPage() {
         </div>
       </div>
     </div>
+    </PageContainer>
   );
 }

@@ -1,87 +1,91 @@
 import { redirect } from "next/navigation";
 
+import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
+import { parseBrandColours, type BrandSlug } from "@/lib/brand/types";
 import { getSession, roleCanAccessOps } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
-import { formatMoney } from "@/lib/utils";
+import { loadAdminReportMetrics, loadOpsReportMetrics } from "@/lib/reports/metrics";
 
-export default async function ReportsPage() {
+import { ReportsDashboard } from "./reports-dashboard";
+
+const BRAND_SLUGS: BrandSlug[] = ["deliverred", "titan-cargo"];
+
+function parseBrandFilter(raw?: string): "all" | BrandSlug {
+  if (raw === "deliverred" || raw === "titan-cargo") return raw;
+  return "all";
+}
+
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ brand?: string }>;
+}) {
   const session = await getSession();
   if (!session || !roleCanAccessOps(session.role)) redirect("/login");
+
+  const isAdmin = session.role === "ADMIN";
+  const params = await searchParams;
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - 7);
 
-  const [weekCount, monthCount, allBookings, quotes] = await Promise.all([
-    prisma.booking.count({ where: { createdAt: { gte: weekStart }, status: { not: "CANCELLED" } } }),
-    prisma.booking.count({ where: { createdAt: { gte: monthStart }, status: { not: "CANCELLED" } } }),
-    prisma.booking.findMany({
-      where: { status: { not: "CANCELLED" } },
-      include: { brand: true, job: true },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    }),
-    prisma.quote.findMany({ where: { createdAt: { gte: weekStart } } }),
-  ]);
+  const brands = await prisma.brand.findMany({
+    where: { slug: { in: [...BRAND_SLUGS] } },
+    select: { id: true, slug: true, name: true, colours: true },
+    orderBy: { name: "asc" },
+  });
 
-  const monthValue = allBookings
-    .filter((b) => b.createdAt >= monthStart)
-    .reduce((sum, b) => sum + Number(b.valueIncVat), 0);
+  if (isAdmin) {
+    const initialBrand = parseBrandFilter(params.brand);
+    const metrics = await loadAdminReportMetrics(weekStart, monthStart);
 
-  const converted = quotes.filter((q) => q.status === "CONVERTED").length;
-  const conversionRate = quotes.length ? Math.round((converted / quotes.length) * 100) : 0;
+    const brandOptions = brands.map((b) => ({
+      slug: b.slug as BrandSlug,
+      name: b.name,
+      colours: parseBrandColours(b.colours),
+    }));
 
-  const marginJobs = allBookings.filter((b) => b.job?.carrierCost != null);
-  const avgMargin =
-    marginJobs.length > 0
-      ? marginJobs.reduce((sum, b) => sum + (Number(b.valueExVat) - Number(b.job!.carrierCost)), 0) /
-        marginJobs.length
-      : 0;
-
-  const customerCounts = new Map<string, number>();
-  for (const booking of allBookings) {
-    const key = booking.contactCompany ?? booking.contactName;
-    customerCounts.set(key, (customerCounts.get(key) ?? 0) + 1);
+    return (
+      <PageContainer className="ops-page">
+        <div>
+          <PageHeader title="Reports" subtitle="Performance overview — all brands" />
+          <ReportsDashboard
+            isAdmin
+            initialBrand={initialBrand}
+            brands={brandOptions}
+            metrics={metrics}
+          />
+        </div>
+      </PageContainer>
+    );
   }
-  const topCustomers = [...customerCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
 
-  const cards = [
-    { title: "Jobs this week", value: String(weekCount) },
-    { title: "Jobs this month", value: String(monthCount) },
-    { title: "Month value", value: formatMoney(monthValue) },
-    { title: "Quote → booking (7d)", value: `${conversionRate}%` },
-    { title: "Avg margin / job", value: formatMoney(avgMargin) },
-  ];
+  const scopedBrand = brands.find((b) => b.id === session.brandId);
+  if (!scopedBrand) redirect("/dashboard");
+
+  const opsSlug = scopedBrand.slug as BrandSlug;
+  const opsMetrics = await loadOpsReportMetrics(opsSlug, weekStart, monthStart);
 
   return (
-    <div>
-      <PageHeader title="Reports" subtitle="Business performance overview" />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {cards.map((card, i) => (
-          <div
-            key={card.title}
-            className="animate-fade-in-up nexus-card"
-            style={{ animationDelay: `${i * 60}ms` }}
-          >
-            <p className="text-sm text-gray-500">{card.title}</p>
-            <p className="mt-2 text-2xl font-bold">{card.value}</p>
-          </div>
-        ))}
+    <PageContainer className="ops-page">
+      <div>
+        <PageHeader title="Reports" subtitle={`Performance — ${scopedBrand.name}`} />
+        <ReportsDashboard
+          isAdmin={false}
+          initialBrand={opsSlug}
+          brands={[
+            {
+              slug: opsSlug,
+              name: scopedBrand.name,
+              colours: parseBrandColours(scopedBrand.colours),
+            },
+          ]}
+          metrics={{ [opsSlug]: opsMetrics }}
+        />
       </div>
-      <section className="animate-fade-in-up nexus-card mt-6">
-        <h2 className="font-semibold">Top customers (90d sample)</h2>
-        <ul className="mt-3 space-y-1 text-sm">
-          {topCustomers.map(([name, count]) => (
-            <li key={name}>
-              {name} — {count} bookings
-            </li>
-          ))}
-        </ul>
-      </section>
-    </div>
+    </PageContainer>
   );
 }

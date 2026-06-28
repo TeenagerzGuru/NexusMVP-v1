@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getRoadDistance } from "@/lib/quote/distance";
 import { calculateQuote } from "@/lib/quote/engine";
 import { toBrandPricingRules } from "@/lib/quote/load-rules";
 import type { QuoteInput } from "@/lib/quote/types";
@@ -35,7 +36,8 @@ export async function loadBrandPricingRules(brandSlug: string) {
 /** Runs engine, persists ACTIVE quote with expiry — caller handles HTTP response shape. */
 export async function createQuoteRecord(input: QuoteInput) {
   const { brandId, rules, quoteExpiryMinutes } = await loadBrandPricingRules(input.brandSlug);
-  const result = calculateQuote(input, rules);
+  const distance = await getRoadDistance(input.originPostcode, input.destinationPostcode);
+  const result = calculateQuote(input, rules, { mileage: distance.miles });
   const reference = `QTE-${Date.now().toString(36).toUpperCase()}`;
   const expiresAt = new Date(Date.now() + quoteExpiryMinutes * 60 * 1000);
 
@@ -53,5 +55,5 @@ export async function createQuoteRecord(input: QuoteInput) {
     },
   });
 
-  return { quote, result };
+  return { quote, result, distance };
 }

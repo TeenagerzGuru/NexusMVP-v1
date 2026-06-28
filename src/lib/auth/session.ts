@@ -121,6 +121,20 @@ export function roleCanAccessOps(role: UserRole) {
   return role === "ADMIN" || role === "OPERATIONS";
 }
 
+/** Ops users are scoped to one brand; admins see all. */
+export function opsBrandFilter(session: SessionUser): { brandId: string } | Record<string, never> {
+  if (session.role === "ADMIN") return {};
+  if (session.brandId) return { brandId: session.brandId };
+  return {};
+}
+
+/** Throws if ops user tries to act on another brand's booking. */
+export function assertOpsBookingAccess(session: SessionUser, bookingBrandId: string) {
+  if (session.role === "ADMIN") return;
+  if (session.role === "OPERATIONS" && session.brandId === bookingBrandId) return;
+  throw new Error("Forbidden");
+}
+
 /** DRIVER portal; ops/admin can impersonate the driver view for support. */
 export function roleCanAccessDriver(role: UserRole) {
   return role === "ADMIN" || role === "OPERATIONS" || role === "DRIVER";

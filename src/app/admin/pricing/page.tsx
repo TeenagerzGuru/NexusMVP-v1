@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 
+import { PageContainer } from "@/components/ui/page-container";
 import { PageHeader } from "@/components/ui/page-header";
+import { parseBrandColours } from "@/lib/brand/types";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 
@@ -19,12 +21,15 @@ export default async function AdminPricingPage() {
   });
 
   return (
+    <PageContainer className="ops-page">
     <div>
-      <PageHeader title="Pricing rules" subtitle="Lane prices and surcharges per brand" />
+      <PageHeader title="Pricing rules" subtitle="Edit lane prices, surcharges and brand margin — live on next quote" />
       <PricingEditor
         brands={brands.map((brand) => ({
           slug: brand.slug,
+          brandId: brand.id,
           name: brand.name,
+          colours: parseBrandColours(brand.colours),
           lanes: brand.pricingLanes.map((lane) => ({
             id: lane.id,
             matchLevel: lane.matchLevel,
@@ -35,6 +40,7 @@ export default async function AdminPricingPage() {
             label: lane.label,
           })),
           surcharges: brand.pricingSurcharges.map((item) => ({
+            id: item.id,
             addonType: item.addonType,
             valueType: item.valueType,
             value: Number(item.value),
@@ -48,5 +54,6 @@ export default async function AdminPricingPage() {
         }))}
       />
     </div>
+    </PageContainer>
   );
 }

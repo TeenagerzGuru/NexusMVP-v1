@@ -13,8 +13,10 @@ type Card = {
 
 export function KanbanBoard({
   columns,
+  showBrand = true,
 }: {
   columns: Array<{ status: string; label: string; bookings: Card[] }>;
+  showBrand?: boolean;
 }) {
   const [moving, setMoving] = useState<string | null>(null);
 
@@ -34,27 +36,22 @@ export function KanbanBoard({
       {columns.map((column, colIndex) => (
         <section
           key={column.status}
-          className="animate-fade-in-up nexus-card min-h-[200px] bg-gray-50/80 p-3"
+          className="admin-kanban-col animate-fade-in-up min-h-[220px] p-3"
           style={{ animationDelay: `${colIndex * 60}ms` }}
         >
-          <h2 className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gray-500">
+          <h2 className="admin-kanban-col-title">
             <span>{column.label}</span>
-            <span
-              className="rounded-full px-2 py-0.5 text-[10px] text-white"
-              style={{ backgroundColor: "var(--brand-primary)" }}
-            >
-              {column.bookings.length}
-            </span>
+            <span className="admin-kanban-count">{column.bookings.length}</span>
           </h2>
           <div className="space-y-3">
             {column.bookings.map((booking, i) => (
               <article
                 key={booking.id}
-                className="animate-scale-in nexus-card bg-white p-3 text-sm"
+                className="admin-kanban-card animate-scale-in p-3 text-sm"
                 style={{ animationDelay: `${colIndex * 60 + i * 40}ms` }}
               >
                 <p className="font-semibold text-gray-900">{booking.reference}</p>
-                <p className="text-xs font-medium text-gray-400">{booking.brand}</p>
+                {showBrand && <p className="text-xs font-medium text-gray-400">{booking.brand}</p>}
                 <p className="mt-1 text-gray-700">{booking.route}</p>
                 <p className="text-gray-500">{booking.customer}</p>
                 <p className="mt-1 font-semibold" style={{ color: "var(--brand-primary)" }}>

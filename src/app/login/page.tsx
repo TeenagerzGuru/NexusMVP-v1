@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { PageContainer } from "@/components/ui/page-container";
 import { Button } from "@/components/ui/button";
 import { Card, CardSkeleton } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/field";
@@ -69,9 +70,16 @@ export default function LoginPage() {
     }
   }
 
-  if (!mounted) return <CardSkeleton className="mx-auto max-w-md" />;
+  if (!mounted) {
+    return (
+      <PageContainer>
+        <CardSkeleton className="mx-auto max-w-md" />
+      </PageContainer>
+    );
+  }
 
   return (
+    <PageContainer>
     <Card className="animate-scale-in mx-auto max-w-md">
       <h1 className="text-2xl font-bold" style={{ color: "var(--brand-primary)" }}>
         Sign in
@@ -114,5 +122,6 @@ export default function LoginPage() {
         Dev: <span className="font-mono">admin@nexus.local</span> / <span className="font-mono">Nexus2026!</span>
       </p>
     </Card>
+    </PageContainer>
   );
 }
