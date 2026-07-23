@@ -4,8 +4,8 @@ import { useRef, useState } from "react";
 
 import { useClickOutside, useEscapeKey } from "@/components/ui/use-click-outside";
 
-const TIME_SLOTS = Array.from({ length: 32 }, (_, i) => {
-  const totalMinutes = 6 * 60 + i * 30;
+export const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
+  const totalMinutes = i * 30;
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -18,10 +18,30 @@ function formatTime12h(value: string) {
   return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-/** 30-minute slot picker from 06:00; displays 12h labels, stores 24h ISO time strings. */
+export function isSlotDisabled(slot: string, selectedDate?: string): boolean {
+  if (!selectedDate) return false;
+
+  // Get local today's date YYYY-MM-DD
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
+  const todayStr = `${y}-${m}-${d}`;
+
+  if (selectedDate !== todayStr) return false;
+
+  const [sh, sm] = slot.split(":").map(Number);
+  const slotDate = new Date(y, today.getMonth(), today.getDate(), sh, sm);
+  const minAllowed = new Date(today.getTime() + 60 * 60 * 1000); // 1 hour in future
+
+  return slotDate < minAllowed;
+}
+
+/** 30-minute slot picker covering 24 hours; displays 12h labels, stores 24h ISO time strings. */
 export function TimePicker({
   value,
   onChange,
+  selectedDate,
   name,
   placeholder = "Select time",
   invalid,
@@ -29,6 +49,7 @@ export function TimePicker({
 }: {
   value: string;
   onChange: (value: string) => void;
+  selectedDate?: string;
   name?: string;
   placeholder?: string;
   invalid?: boolean;
@@ -73,14 +94,18 @@ export function TimePicker({
           <ul className="max-h-52 overflow-auto">
             {TIME_SLOTS.map((slot, i) => {
               const selected = slot === value;
+              const disabled = isSlotDisabled(slot, selectedDate);
               return (
                 <li key={slot}>
                   <button
                     type="button"
+                    disabled={disabled}
                     className={`popover-item flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-all ${
                       selected
                         ? "font-semibold text-white shadow-sm"
-                        : "text-gray-700 hover:bg-gray-50"
+                        : disabled
+                          ? "cursor-not-allowed opacity-35 text-gray-300"
+                          : "text-gray-700 hover:bg-gray-50"
                     }`}
                     style={{
                       animationDelay: open ? `${i * 15}ms` : "0ms",
