@@ -98,6 +98,11 @@ export function calculateQuote(
     throw new Error("Invalid collection date or time");
   }
 
+  const oneHourInMs = 60 * 60 * 1000;
+  if (collectionAt.getTime() - now.getTime() < oneHourInMs) {
+    throw new Error("Collection time must be at least 1 hour in the future");
+  }
+
   breakdown.push({
     step: "postcode_parse",
     description: `Origin ${origin.district} (${origin.area}), destination ${destination.district} (${destination.area})`,

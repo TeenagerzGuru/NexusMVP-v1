@@ -73,4 +73,22 @@ describe("calculateQuote — edge cases", () => {
 
     expect(result.priceExVat).toBe(150);
   });
+
+  it("throws an error when collection time is less than 1 hour in the future", () => {
+    expect(() =>
+      calculateQuote(
+        {
+          originPostcode: "SW1A 1AA",
+          destinationPostcode: "SW1A 2AA",
+          vehicleType: "7.5T",
+          collectionDate: "2026-06-20",
+          collectionTime: "10:30",
+          addons: [],
+          brandSlug: "titan-cargo",
+        },
+        titanRules,
+        { now: new Date("2026-06-20T10:00:00"), mileage: 1 },
+      )
+    ).toThrow("Collection time must be at least 1 hour in the future");
+  });
 });

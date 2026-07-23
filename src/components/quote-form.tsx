@@ -9,7 +9,7 @@ import { Card, CardSkeleton } from "@/components/ui/card";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { SelectDropdown } from "@/components/ui/select-dropdown";
-import { TimePicker } from "@/components/ui/time-picker";
+import { TimePicker, TIME_SLOTS, isSlotDisabled } from "@/components/ui/time-picker";
 import { fetchJson } from "@/lib/fetch-json";
 import { email, hasErrors, required, type FieldErrors } from "@/lib/form-validation";
 import { parseUkPostcode } from "@/lib/quote/postcode";
@@ -91,6 +91,13 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
 
     if (!collectionDate) errors.collectionDate = "Please select a collection date.";
     if (!collectionTime) errors.collectionTime = "Please select a collection time.";
+    
+    if (collectionDate && collectionTime) {
+      if (isSlotDisabled(collectionTime, collectionDate)) {
+        errors.collectionTime = "Collection time must be at least 1 hour in the future.";
+      }
+    }
+
     if (!vehicleType) errors.vehicleType = "Please select a vehicle type.";
 
     return errors;
@@ -108,12 +115,73 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
     return errors;
   }
 
+  function getValidTimeForDate(dateStr: string, currentVal: string): string {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    const todayStr = `${y}-${m}-${d}`;
+
+    if (dateStr !== todayStr) {
+      return currentVal;
+    }
+
+    if (!isSlotDisabled(currentVal, dateStr)) {
+      return currentVal;
+    }
+
+    for (const slot of TIME_SLOTS) {
+      if (!isSlotDisabled(slot, dateStr)) {
+        return slot;
+      }
+    }
+
+    return "";
+  }
+
+  function getLocalDateString(d: Date = new Date()) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dayStr = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dayStr}`;
+  }
+
   useEffect(() => {
     setMounted(true);
-    const today = new Date().toISOString().slice(0, 10);
-    setMinDate(today);
-    setCollectionDate(today);
+    const today = new Date();
+    const todayStr = getLocalDateString(today);
+    const firstValidSlot = TIME_SLOTS.find(slot => !isSlotDisabled(slot, todayStr));
+
+    if (firstValidSlot) {
+      setMinDate(todayStr);
+      setCollectionDate(todayStr);
+      setCollectionTime((current) => getValidTimeForDate(todayStr, current));
+    } else {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = getLocalDateString(tomorrow);
+      setMinDate(tomorrowStr);
+      setCollectionDate(tomorrowStr);
+      setCollectionTime("08:00");
+    }
   }, []);
+
+  useEffect(() => {
+    if (!collectionDate) return;
+    const todayStr = getLocalDateString(new Date());
+    if (collectionDate === todayStr) {
+      const validTime = getValidTimeForDate(collectionDate, collectionTime);
+      if (validTime && validTime !== collectionTime) {
+        setCollectionTime(validTime);
+      } else if (!validTime) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = getLocalDateString(tomorrow);
+        setCollectionDate(tomorrowStr);
+        setCollectionTime("08:00");
+      }
+    }
+  }, [collectionDate]);
 
   useEffect(() => {
     const origin = originPostcode.trim();
@@ -332,6 +400,7 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
                   name="collectionTime"
                   data-field="collectionTime"
                   value={collectionTime}
+                  selectedDate={collectionDate}
                   onChange={(value) => {
                     setCollectionTime(value);
                     clearQuoteError("collectionTime");
