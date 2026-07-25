@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { PageContainer } from "@/components/ui/page-container";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,14 @@ import { Field, Input } from "@/components/ui/field";
 import { fetchJson } from "@/lib/fetch-json";
 import { email, hasErrors, required, type FieldErrors } from "@/lib/form-validation";
 
-type LoginField = "email" | "password";
+type RegisterField = "name" | "email" | "password" | "confirmPassword";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors<LoginField>>({});
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<RegisterField>>({});
   const [shakeKey, setShakeKey] = useState(0);
 
   useEffect(() => setMounted(true), []);
@@ -28,44 +28,64 @@ export default function LoginPage() {
     setError(null);
 
     const form = new FormData(event.currentTarget);
-    const errors: FieldErrors<LoginField> = {};
-    const emailError = email(String(form.get("email") ?? ""));
+    const nameVal = String(form.get("name") ?? "");
+    const emailVal = String(form.get("email") ?? "");
+    const passwordVal = String(form.get("password") ?? "");
+    const confirmPasswordVal = String(form.get("confirmPassword") ?? "");
+
+    const errors: FieldErrors<RegisterField> = {};
+
+    const nameError = required(nameVal, "Please enter your full name.");
+    if (nameError) errors.name = nameError;
+
+    const emailError = email(emailVal);
     if (emailError) errors.email = emailError;
-    const passwordError = required(String(form.get("password") ?? ""), "Please enter your password.");
-    if (passwordError) errors.password = passwordError;
+
+    const passwordError = required(passwordVal, "Please enter a password.");
+    if (passwordError) {
+      errors.password = passwordError;
+    } else if (passwordVal.length < 8) {
+      errors.password = "Password must be at least 8 characters long.";
+    }
+
+    if (!confirmPasswordVal) {
+      errors.confirmPassword = "Please confirm your password.";
+    } else if (passwordVal !== confirmPasswordVal) {
+      errors.confirmPassword = "Passwords do not match.";
+    }
 
     if (hasErrors(errors)) {
       setFieldErrors(errors);
       setShakeKey((k) => k + 1);
-      const first = Object.keys(errors)[0] as LoginField;
+      const first = Object.keys(errors)[0] as RegisterField;
       event.currentTarget.querySelector<HTMLElement>(`[data-field="${first}"]`)?.focus();
       return;
     }
-    setFieldErrors({});
 
+    setFieldErrors({});
     setLoading(true);
 
     try {
-      const { data, ok } = await fetchJson<{ role?: string; error?: string }>("/api/auth/login", {
+      const { data, ok } = await fetchJson<{ error?: string }>("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: form.get("email"),
-          password: form.get("password"),
+          name: nameVal,
+          email: emailVal,
+          password: passwordVal,
+          role: "CUSTOMER",
         }),
       });
 
       if (!ok) {
-        setError(data.error ?? "Login failed");
+        setError(data.error ?? "Registration failed");
         return;
       }
 
-      if (data.role === "DRIVER") router.push("/driver");
-      else if (data.role === "CUSTOMER") router.push("/account");
-      else router.push("/dashboard");
+      router.push("/account");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -83,11 +103,23 @@ export default function LoginPage() {
     <PageContainer>
       <Card className="animate-scale-in mx-auto max-w-md">
         <h1 className="text-2xl font-bold" style={{ color: "var(--brand-primary)" }}>
-          Sign in
+          Create account
         </h1>
-        <p className="mt-1 text-sm text-gray-500">Staff, drivers & customer accounts</p>
+        <p className="mt-1 text-sm text-gray-500">Register as a new customer</p>
 
         <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">
+          <Field label="Full Name" error={fieldErrors.name}>
+            <Input
+              key={fieldErrors.name ? `name-shake-${shakeKey}` : "name"}
+              name="name"
+              data-field="name"
+              type="text"
+              autoComplete="name"
+              invalid={!!fieldErrors.name}
+              onChange={() => setFieldErrors((prev) => ({ ...prev, name: undefined }))}
+            />
+          </Field>
+
           <Field label="Email" error={fieldErrors.email}>
             <Input
               key={fieldErrors.email ? `email-shake-${shakeKey}` : "email"}
@@ -99,19 +131,33 @@ export default function LoginPage() {
               onChange={() => setFieldErrors((prev) => ({ ...prev, email: undefined }))}
             />
           </Field>
+
           <Field label="Password" error={fieldErrors.password}>
             <Input
               key={fieldErrors.password ? `password-shake-${shakeKey}` : "password"}
               name="password"
               data-field="password"
               type="password"
-              autoComplete="current-password"
+              autoComplete="new-password"
               invalid={!!fieldErrors.password}
               onChange={() => setFieldErrors((prev) => ({ ...prev, password: undefined }))}
             />
           </Field>
+
+          <Field label="Confirm Password" error={fieldErrors.confirmPassword}>
+            <Input
+              key={fieldErrors.confirmPassword ? `confirmPassword-shake-${shakeKey}` : "confirmPassword"}
+              name="confirmPassword"
+              data-field="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              invalid={!!fieldErrors.confirmPassword}
+              onChange={() => setFieldErrors((prev) => ({ ...prev, confirmPassword: undefined }))}
+            />
+          </Field>
+
           <Button type="submit" disabled={loading} className="w-full">
-            {loading ? "Signing in…" : "Sign in"}
+            {loading ? "Creating account…" : "Create account"}
           </Button>
         </form>
 
@@ -119,14 +165,10 @@ export default function LoginPage() {
           <p className="animate-fade-in mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
         )}
 
-        <p className="mt-5 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
-          Dev: <span className="font-mono">admin@nexus.local</span> / <span className="font-mono">Nexus2026!</span>
-        </p>
-
         <p className="mt-5 text-center text-xs text-gray-500">
-          Don&apos;t have an account?{" "}
-          <Link href="/registerCust" className="font-semibold underline hover:text-gray-700">
-            Register
+          Already have an account?{" "}
+          <Link href="/login" className="font-semibold underline hover:text-gray-700">
+            Sign in
           </Link>
         </p>
       </Card>

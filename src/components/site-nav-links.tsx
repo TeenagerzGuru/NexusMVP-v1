@@ -36,11 +36,12 @@ export function SiteNavLinks({
 }) {
   const items: NavItem[] = [];
 
+  // Navigation for guest users (not logged in)
   if (!role) {
     return (
       <nav className="flex items-center gap-1 text-sm">
         <NavLink href="/#quote">Get quote</NavLink>
-        <NavLink href="/login">Staff login</NavLink>
+        <NavLink href="/login">Login</NavLink>
       </nav>
     );
   }
