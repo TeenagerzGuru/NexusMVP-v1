@@ -100,15 +100,22 @@ export default function LoginPage() {
             />
           </Field>
           <Field label="Password" error={fieldErrors.password}>
-            <Input
-              key={fieldErrors.password ? `password-shake-${shakeKey}` : "password"}
-              name="password"
-              data-field="password"
-              type="password"
-              autoComplete="current-password"
-              invalid={!!fieldErrors.password}
-              onChange={() => setFieldErrors((prev) => ({ ...prev, password: undefined }))}
-            />
+            <div className="space-y-1">
+              <Input
+                key={fieldErrors.password ? `password-shake-${shakeKey}` : "password"}
+                name="password"
+                data-field="password"
+                type="password"
+                autoComplete="current-password"
+                invalid={!!fieldErrors.password}
+                onChange={() => setFieldErrors((prev) => ({ ...prev, password: undefined }))}
+              />
+              <div className="flex justify-end">
+                <Link href="/forgot-password" className="text-xs text-gray-500 hover:text-gray-700 underline">
+                  Forgot password?
+                </Link>
+              </div>
+            </div>
           </Field>
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Signing in…" : "Sign in"}
