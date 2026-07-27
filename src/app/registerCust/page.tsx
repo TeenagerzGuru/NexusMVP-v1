@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -14,7 +13,6 @@ import { email, hasErrors, required, type FieldErrors } from "@/lib/form-validat
 type RegisterField = "name" | "email" | "password" | "confirmPassword";
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -95,11 +93,10 @@ export default function RegisterPage() {
       // Check if user came from booking flow
       const savedState = sessionStorage.getItem("nexus_pending_booking");
       if (savedState) {
-        router.push("/?restore_booking=true");
+        window.location.href = "/?restore_booking=true";
       } else {
-        router.push("/account");
+        window.location.href = "/account";
       }
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
