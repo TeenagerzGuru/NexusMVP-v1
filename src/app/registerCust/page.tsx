@@ -21,7 +21,17 @@ export default function RegisterPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<RegisterField>>({});
   const [shakeKey, setShakeKey] = useState(0);
 
-  useEffect(() => setMounted(true), []);
+  const [name, setName] = useState("");
+  const [emailValState, setEmailValState] = useState("");
+
+  useEffect(() => {
+    setMounted(true);
+    const searchParams = new URLSearchParams(window.location.search);
+    const emailParam = searchParams.get("email");
+    const nameParam = searchParams.get("name");
+    if (emailParam) setEmailValState(emailParam);
+    if (nameParam) setName(nameParam);
+  }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -82,7 +92,13 @@ export default function RegisterPage() {
         return;
       }
 
-      router.push("/account");
+      // Check if user came from booking flow
+      const savedState = sessionStorage.getItem("nexus_pending_booking");
+      if (savedState) {
+        router.push("/?restore_booking=true");
+      } else {
+        router.push("/account");
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -115,8 +131,12 @@ export default function RegisterPage() {
               data-field="name"
               type="text"
               autoComplete="name"
+              value={name}
               invalid={!!fieldErrors.name}
-              onChange={() => setFieldErrors((prev) => ({ ...prev, name: undefined }))}
+              onChange={(e) => {
+                setName(e.target.value);
+                setFieldErrors((prev) => ({ ...prev, name: undefined }));
+              }}
             />
           </Field>
 
@@ -127,8 +147,12 @@ export default function RegisterPage() {
               data-field="email"
               type="email"
               autoComplete="email"
+              value={emailValState}
               invalid={!!fieldErrors.email}
-              onChange={() => setFieldErrors((prev) => ({ ...prev, email: undefined }))}
+              onChange={(e) => {
+                setEmailValState(e.target.value);
+                setFieldErrors((prev) => ({ ...prev, email: undefined }));
+              }}
             />
           </Field>
 
