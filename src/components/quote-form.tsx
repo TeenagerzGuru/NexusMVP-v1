@@ -59,6 +59,18 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
   const [routePreview, setRoutePreview] = useState<RoutePreview | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
 
+  // Booking contact form state
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactCompany, setContactCompany] = useState("");
+  const [customerReference, setCustomerReference] = useState("");
+  const [specialInstructions, setSpecialInstructions] = useState("");
+
+  // Unregistered user countdown redirect screen
+  const [unregisteredRedirect, setUnregisteredRedirect] = useState(false);
+  const [countdown, setCountdown] = useState(5);
+
   function clearQuoteError(field: QuoteField) {
     setQuoteErrors((prev) => {
       if (!prev[field]) return prev;
@@ -165,6 +177,34 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
       setCollectionTime("08:00");
     }
   }, []);
+
+  // Restore saved booking data after user returns from signup
+  useEffect(() => {
+    if (!mounted) return;
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get("restore_booking") === "true") {
+      const savedStr = sessionStorage.getItem("nexus_pending_booking");
+      if (savedStr) {
+        try {
+          const saved = JSON.parse(savedStr);
+          if (saved.quote) setQuote(saved.quote);
+          if (saved.contactName) setContactName(saved.contactName);
+          if (saved.contactEmail) setContactEmail(saved.contactEmail);
+          if (saved.contactPhone) setContactPhone(saved.contactPhone);
+          if (saved.contactCompany) setContactCompany(saved.contactCompany);
+          if (saved.customerReference) setCustomerReference(saved.customerReference);
+          if (saved.specialInstructions) setSpecialInstructions(saved.specialInstructions);
+          if (saved.originPostcode) setOriginPostcode(saved.originPostcode);
+          if (saved.destinationPostcode) setDestinationPostcode(saved.destinationPostcode);
+        } catch {
+          // ignore parsing error
+        }
+        sessionStorage.removeItem("nexus_pending_booking");
+        // Clean URL
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  }, [mounted]);
 
   useEffect(() => {
     if (!collectionDate) return;
@@ -284,17 +324,68 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
     setLoading(true);
 
     try {
+      const emailInput = String(form.get("contactEmail") ?? "").trim();
+      const nameInput = String(form.get("contactName") ?? "").trim();
+      const phoneInput = String(form.get("contactPhone") ?? "").trim();
+      const companyInput = String(form.get("contactCompany") ?? "").trim();
+      const refInput = String(form.get("customerReference") ?? "").trim();
+      const instructionsInput = String(form.get("specialInstructions") ?? "").trim();
+
+      // Check if user email is registered in database
+      const { data: userCheck } = await fetchJson<{ exists: boolean }>("/api/auth/check-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput }),
+      });
+
+      if (!userCheck?.exists) {
+        // Save state into sessionStorage
+        const pendingData = {
+          quote,
+          contactName: nameInput,
+          contactEmail: emailInput,
+          contactPhone: phoneInput,
+          contactCompany: companyInput,
+          customerReference: refInput,
+          specialInstructions: instructionsInput,
+          originPostcode,
+          destinationPostcode,
+        };
+        sessionStorage.setItem("nexus_pending_booking", JSON.stringify(pendingData));
+
+        // Trigger 5 sec countdown waiting screen
+        setLoading(false);
+        setUnregisteredRedirect(true);
+        setCountdown(5);
+
+        let currentCount = 5;
+        const interval = setInterval(() => {
+          currentCount -= 1;
+          setCountdown(currentCount);
+          if (currentCount <= 0) {
+            clearInterval(interval);
+            const params = new URLSearchParams({
+              email: emailInput,
+              name: nameInput,
+            });
+            window.location.href = `/registerCust?${params.toString()}`;
+          }
+        }, 1000);
+
+        return;
+      }
+
       const { data, ok } = await fetchJson<{ reference: string; error?: string }>("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           quoteId: quote.id,
-          contactName: form.get("contactName"),
-          contactEmail: form.get("contactEmail"),
-          contactPhone: form.get("contactPhone") || undefined,
-          contactCompany: form.get("contactCompany") || undefined,
-          customerReference: form.get("customerReference") || undefined,
-          specialInstructions: form.get("specialInstructions") || undefined,
+          contactName: nameInput,
+          contactEmail: emailInput,
+          contactPhone: phoneInput || undefined,
+          contactCompany: companyInput || undefined,
+          customerReference: refInput || undefined,
+          specialInstructions: instructionsInput || undefined,
         }),
       });
       if (!ok) throw new Error(data.error ?? "Booking failed");
@@ -496,49 +587,90 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
 
           <Card className={`animate-fade-in-up stagger-2 ${embedded ? "landing-quote-card" : ""}`}>
             <h3 className="text-lg font-semibold">Confirm booking</h3>
-            <form onSubmit={confirmBooking} noValidate className="mt-5 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Your name" error={bookingErrors.contactName}>
-                  <Input
-                    key={bookingErrors.contactName ? `name-shake-${shakeKey}` : "name"}
-                    name="contactName"
-                    data-field="contactName"
-                    invalid={!!bookingErrors.contactName}
-                    onChange={() => clearBookingError("contactName")}
+
+            {unregisteredRedirect ? (
+              <div className="animate-fade-in my-8 text-center">
+                <div
+                  className="mx-auto flex h-20 w-20 items-center justify-center rounded-full text-4xl font-extrabold text-white shadow-lg"
+                  style={{ background: "var(--brand-primary)" }}
+                >
+                  {countdown}
+                </div>
+                <p className="mt-4 font-semibold text-gray-800">Redirecting in {countdown} seconds…</p>
+                <p className="mt-2 text-sm text-gray-600">
+                  since you email unregister yet, we will bring you to sign up page
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={confirmBooking} noValidate className="mt-5 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Your name" error={bookingErrors.contactName}>
+                    <Input
+                      key={bookingErrors.contactName ? `name-shake-${shakeKey}` : "name"}
+                      name="contactName"
+                      data-field="contactName"
+                      value={contactName}
+                      invalid={!!bookingErrors.contactName}
+                      onChange={(e) => {
+                        setContactName(e.target.value);
+                        clearBookingError("contactName");
+                      }}
+                    />
+                  </Field>
+                  <Field label="Email" error={bookingErrors.contactEmail}>
+                    <Input
+                      key={bookingErrors.contactEmail ? `email-shake-${shakeKey}` : "email"}
+                      name="contactEmail"
+                      data-field="contactEmail"
+                      type="email"
+                      value={contactEmail}
+                      invalid={!!bookingErrors.contactEmail}
+                      onChange={(e) => {
+                        setContactEmail(e.target.value);
+                        clearBookingError("contactEmail");
+                      }}
+                    />
+                  </Field>
+                  <Field label="Phone">
+                    <Input
+                      name="contactPhone"
+                      value={contactPhone}
+                      onChange={(e) => setContactPhone(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Company">
+                    <Input
+                      name="contactCompany"
+                      value={contactCompany}
+                      onChange={(e) => setContactCompany(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Your reference (optional)">
+                    <Input
+                      name="customerReference"
+                      value={customerReference}
+                      onChange={(e) => setCustomerReference(e.target.value)}
+                    />
+                  </Field>
+                </div>
+                <Field label="Special instructions">
+                  <Textarea
+                    name="specialInstructions"
+                    rows={2}
+                    value={specialInstructions}
+                    onChange={(e) => setSpecialInstructions(e.target.value)}
                   />
                 </Field>
-                <Field label="Email" error={bookingErrors.contactEmail}>
-                  <Input
-                    key={bookingErrors.contactEmail ? `email-shake-${shakeKey}` : "email"}
-                    name="contactEmail"
-                    data-field="contactEmail"
-                    type="email"
-                    invalid={!!bookingErrors.contactEmail}
-                    onChange={() => clearBookingError("contactEmail")}
-                  />
-                </Field>
-                <Field label="Phone">
-                  <Input name="contactPhone" />
-                </Field>
-                <Field label="Company">
-                  <Input name="contactCompany" />
-                </Field>
-                <Field label="Your reference (optional)">
-                  <Input name="customerReference" />
-                </Field>
-              </div>
-              <Field label="Special instructions">
-                <Textarea name="specialInstructions" rows={2} />
-              </Field>
-              <div className="flex flex-wrap gap-3">
-                <Button type="submit" disabled={loading}>
-                  {loading ? "Confirming…" : "Confirm booking"}
-                </Button>
-                <Button type="button" variant="ghost" onClick={() => setQuote(null)}>
-                  Back
-                </Button>
-              </div>
-            </form>
+                <div className="flex flex-wrap gap-3">
+                  <Button type="submit" disabled={loading}>
+                    {loading ? "Confirming…" : "Confirm booking"}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setQuote(null)}>
+                    Back
+                  </Button>
+                </div>
+              </form>
+            )}
           </Card>
         </div>
       )}
