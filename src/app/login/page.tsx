@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { PageContainer } from "@/components/ui/page-container";
@@ -14,7 +13,6 @@ import { email, hasErrors, required, type FieldErrors } from "@/lib/form-validat
 type LoginField = "email" | "password";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -60,10 +58,9 @@ export default function LoginPage() {
         return;
       }
 
-      if (data.role === "DRIVER") router.push("/driver");
-      else if (data.role === "CUSTOMER") router.push("/account");
-      else router.push("/dashboard");
-      router.refresh();
+      if (data.role === "DRIVER") window.location.href = "/driver";
+      else if (data.role === "CUSTOMER") window.location.href = "/account";
+      else window.location.href = "/dashboard";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
