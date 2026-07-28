@@ -61,6 +61,7 @@ export default function ForgotPasswordPage() {
 
       setEmailAddress(emailVal);
       setStep("otp");
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to request OTP");
     } finally {
@@ -168,8 +169,8 @@ export default function ForgotPasswordPage() {
           Forgot Password
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          {step === "email" && "Enter your email to receive an OTP"}
-          {step === "otp" && "Enter the 6-digit OTP sent to your email"}
+          {step === "email" && "Enter your email — if an account exists, we will send an OTP"}
+          {step === "otp" && "If an account exists for that email, we sent a 6-digit OTP — enter it below"}
           {step === "reset" && "Create a new password"}
         </p>
 

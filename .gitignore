@@ -9,6 +9,7 @@ build/
 .env
 .env.*
 !.env.example
+.otps.json
 
 # Logs & OS
 *.log

@@ -28,8 +28,9 @@ const nextConfig: NextConfig = {
           },
           {
             key: "Content-Security-Policy",
+            // Leaflet OSM tiles + Next.js need img/https and unsafe-eval in script-src
             value:
-              "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none';",
+              "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.tile.openstreetmap.org; frame-ancestors 'none'; object-src 'none';",
           },
         ],
       },
