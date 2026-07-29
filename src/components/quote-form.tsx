@@ -70,6 +70,8 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
   // Unregistered user countdown redirect screen
   const [unregisteredRedirect, setUnregisteredRedirect] = useState(false);
   const [countdown, setCountdown] = useState(5);
+  /** After signup restore — submit booking once without requiring another click. */
+  const [autoBookAfterRestore, setAutoBookAfterRestore] = useState(false);
 
   function clearQuoteError(field: QuoteField) {
     setQuoteErrors((prev) => {
@@ -196,6 +198,9 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
           if (saved.specialInstructions) setSpecialInstructions(saved.specialInstructions);
           if (saved.originPostcode) setOriginPostcode(saved.originPostcode);
           if (saved.destinationPostcode) setDestinationPostcode(saved.destinationPostcode);
+          if (saved.quote?.id && saved.contactName && saved.contactEmail) {
+            setAutoBookAfterRestore(true);
+          }
         } catch {
           // ignore parsing error
         }
@@ -205,6 +210,57 @@ export function QuoteForm({ embedded = false }: { embedded?: boolean }) {
       }
     }
   }, [mounted]);
+
+  // Complete booking automatically once restored after signup
+  useEffect(() => {
+    if (!autoBookAfterRestore || !quote?.id || !contactName || !contactEmail) return;
+
+    let cancelled = false;
+    setAutoBookAfterRestore(false);
+    setLoading(true);
+    setError(null);
+
+    (async () => {
+      try {
+        const { data, ok } = await fetchJson<{ reference: string; error?: string }>("/api/bookings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            quoteId: quote.id,
+            contactName,
+            contactEmail,
+            contactPhone: contactPhone || undefined,
+            contactCompany: contactCompany || undefined,
+            customerReference: customerReference || undefined,
+            specialInstructions: specialInstructions || undefined,
+          }),
+        });
+        if (cancelled) return;
+        if (!ok) throw new Error(data.error ?? "Booking failed");
+        setBookingRef(data.reference);
+        setQuote(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Booking failed");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    autoBookAfterRestore,
+    quote,
+    contactName,
+    contactEmail,
+    contactPhone,
+    contactCompany,
+    customerReference,
+    specialInstructions,
+  ]);
 
   useEffect(() => {
     if (!collectionDate) return;
